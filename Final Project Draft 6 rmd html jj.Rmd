@@ -1,0 +1,688 @@
+---
+title: "ECI 289G Final Project: Los Angeles Multi-family Rental Housing"
+author: "Michelle Byars, Mia Dawson, Jennifer Jarin"
+date: "March 22, 2017"
+output: html_document
+
+---
+
+<BR>
+<BR>
+
+### Introduction
+Matt Palm, a research Analyst at California Housing Finance Agency, supplied the main data sets used in this project. Data sets are at the census tract level and included information on the number of rental units and other demographic data about the City of Los Angeles (LA). The analyzed data was originally collected from different agencies for different purposes, as follows: 
+
+<BR>
+
+1.	American Community Survey (ACS) housing data is published by the U.S. Census and is calculated from the American Community Survey performed every 5-years.  The ACS acquires information on education, employment, income, and housing and transportation costs among others.
+2.	County of Los Angeles, Land Use Planning and Management Subsystem (LUPAMS) data provided is for census tracts in the City of LA only. More generally, LUPAMS provides historic ownership and descriptive information on properties in the County of Los Angeles. It holds data from the Department of Public Health which "is responsible for routinely inspecting all apartments and condominiums with five units or more to ensure that housing within the County is safe, sanitary, and fit for human habitation." More information found here: http://www.lacounty.gov/residents/housing-development/housing-inspections) 
+3.	Los Angeles Housing + Community Investment Department (HCIDLA) data includes numbers of multi-family rentals registered on their site, both rent controlled and those not. More detailed information about HICIDLA may be found here: http://hcidla.lacity.org/Owning-a-Rent-Stabilized-Property
+4.	Regional Opportunity Index (ROI) provided gives demographic data presented as numerical, percent, or as an index and are geographically located by census tract. A full description of our data sources and methodology for calculating the ROI and its various components is available for here: http://interact.regionalchange.ucdavis.edu/roi/Download_Data/ROI%20Metadata.pdf 
+
+<BR>
+<BR>
+
+###Project objective:
+"The purpose of this project is to compare the Los Angeles rental data (required by the City when a landlord rents a unit in a multi-family unit) to that reported in the ACS. In addition, if the data sources are markedly different, are there any factors in which data vary along?"
+
+<BR>
+<BR>
+
+###Analysis Process:
+#####1. Raw data provided by Matt Palm:
+- LA Rental Unit Data ("Palm-LosAngelesRentalCensus.xls")
+- Data Dictionary ("Palm-Los Angeles Rental Census Data Dictionary.doc")
+- Regional Opportunity Index (ROI) Data ("Palm-ROI_downloadable_data.xls")
+<BR>
+<BR>
+<BR>
+
+#####2. After reviewing the given data sets in Excel and using the data dictionary provided, we decided which specific data were relevant for our purpose. 
+<BR>
+
+
+The following data from the LA Rental Unit Data were used for analysis:
+<BR>
+
+
+|Source            | Information                    | Label
+|------------------|--------------------------------|------|
+|ACS      | Multi-family rental units   | ACS_MFRENTALS
+|LUPAMS &nbsp; &nbsp;        | Multi-family rental units  | LUPAMS
+|HCIDLA             |Multi-family rental units| HCIDLA
+
+<BR>
+
+The following data from the ROI data were used for our analysis: 
+<BR>
+
+
+|Sheet            | Information       |
+|------------------|------------------|
+|ROI_12.15.14      | Demographic data | 
+|JHFIT-places &nbsp; &nbsp;        | Jobs-housing fit data  | 
+
+
+NOTE: We edited the ROI metadata set in order to focus on indicators related to demographics and Job-housing fit. We also created a shortened data set in order to best observe results in newly created columns. Finally, we added data from several packages in R to assist with mapping (further detailed later in this document).
+<BR>
+<BR>
+<BR>
+
+#####3. These data were merged into one data frame within R.
+<BR>
+
+#####4. Preliminary examination of data ensued. Using box plots of the data distribution and following with t-tests, it was determined that the LUPAMS and HCIDLA data were statistically similar. The t-test results and box plots are shown below. In a paired t-test, a t value between -2 and 2 causes us to reject the null hypothesis, which in this case is that the two compared values are different. Therefore, LUPAMs and HCIDLA are similar, however both are statistically different from the multi-family ACS data.  
+<BR>
+
+|Comparison   | t   | p value | 95% confidence interval | Mean of the differences |
+|-------------|-----|---------|-------------------------|-------------------------|
+|LUPAMS and HCIDLA | -0.36212 | 0.7173  | -3.405499  2.3444438  | -0.5305305      |
+|ACS_MFRENTALS and HCIDLA | -7.3148 |  5.29E-13  | -70.23732  -40.52344| -55.38038 |
+|ACS_MFRENTALS and LUPAMS | -7.0344 |  3.71E-12  | -70.15107  -39.54863| -54.84985 |
+
+<BR>
+<BR>
+<BR>
+<BR>
+
+### Prepare R for our code
+This is the list of packages you will need to run our code. Please see commented code below to check for any pre-installations of uncommon packages in R (e.g. install_github("arilamstein/choroplethrCaCensusTract@v1.0.0")). Finally, you will also need the latest version of R (version 3.3.3).
+```{r message=FALSE}
+#If you do not have these packages installed, then remove the "#" before each line to install them.
+#install.packages("tigris")
+#install.packages("acs")
+#install.packages("devtools")
+#install.packages("stringr")
+#install.packages(pkgs = "acs_2.0.tar.gz", repos = NULL)
+#install.packages("leaflet")
+#install.packages("htmltools")
+#install.packages("mapview")
+#install.packages("webshot")
+#install.packages("htmlwidgets")
+#install.packages("WDI")
+#install.packages("DBI")
+library(devtools) #This needs to load before installing choroplethrCaCensusTract
+#install_github("arilamstein/choroplethrCaCensusTract@v1.0.0")
+library(ggplot2)
+library(ggmap)
+library(choroplethrCaCensusTract)
+library(tigris)
+library(acs) #See commented code 
+#api.key.install(key="d43cbb69b1abc99c61d64a497eca627296f5f4f1") #Note that an individualized API key must be obtained from the Census Bureau for each individual user in order to activate the "acs" package in R. Obtain the API key from (http://api.census.gov/data/key_signup.html).
+library(stringr)
+library(dplyr)
+library(leaflet)
+library(htmltools)
+library(mapview)
+library(webshot)
+library(htmlwidgets)
+```
+####
+
+<BR>
+<BR>
+
+### Create a merged data set 
+We need to load the data sets from the California Housing Finance Agency (CAL HFA), the Center for Regional Change, and other data sources from R packages.
+
+```{r results="hide"}
+#######Clean and sort data provided from course assignment
+LArentals = read.csv("Palm-LosAngelesRentalCensus.csv", sep=",", header=TRUE) #Load LA Rental data
+ROI = read.csv("ROI edited.csv", sep=",", header=TRUE, na.strings = c("<Null>", "#NULL!"))  #Load ROI demographic data
+ROIJHF = read.csv("ROI JOBHousingFit.csv", sep=",", header=TRUE, na.strings = "#NULL!")#Add ROI Jobs-housing fit data
+
+
+str(LArentals) #Check composition of data set. NOTE: We need to clean some columns
+str(ROI) #Check composition of data set
+
+
+
+#Clean columns and data
+names(LArentals) = sub("GEOID", "tract", names(LArentals)) #Renames GEOID to "tract" so that we can merge LArental data with ROI data by a common column name.
+LArentals$X = NULL #Removes extra column in LArentals
+colnames(LArentals) #checks that the column names are accurate and that "x" was removed.
+LArentals[is.na(LArentals)]=0 #Changes NAs to 0. Note this does not affect the ACS, LUPAMS, HCIDLA columns because there are no NAs in those columns. The only NAs in the data set are in the HCIDLA Rent-Controlled column.
+ROI=ROI[,1:60] #get rid of z scores, reliability, and missing indicator flags 
+ROIJHF$Low.wage.jobs.in.tract <- as.character(ROIJHF$Low.wage.jobs.in.tract) #change the column to characters so that we can get rid of the commas
+ROIJHF$Low.wage.jobs.in.tract <- gsub(",", "", ROIJHF$Low.wage.jobs.in.tract) #use gsub to find/replace the commas with nothing, effectively removing commas
+ROIJHF$Low.wage.jobs.in.tract <- as.numeric(ROIJHF$Low.wage.jobs.in.tract) #makes column numeric again
+
+
+#Merge data from Cal HFA and ROI
+merge = merge(LArentals, ROI, by="tract") #merge LA Rentals and ROI demographic data sets by "tract"
+mergeLA = merge(merge, ROIJHF, by="tract") #final merge which adds Housing and Job-fit ROI data set to LA rentals and ROI demographics.
+
+
+##Add Percent difference columns 
+mergeLA$AvLpd=round(100*((mergeLA$ACS_MFRENTALS-mergeLA$LUPAMS)/(mergeLA$ACS_MFRENTALS+mergeLA$LUPAMS)/2), digits=3) #Uses ACS as the "standard" and calculates the percent difference of LUPAMS
+mergeLA$AvHpd=round(100*((mergeLA$ACS_MFRENTALS-mergeLA$HCIDLA)/(mergeLA$ACS_MFRENTALS+mergeLA$HCIDLA)/2), digits=3) #Uses ACS as the "standard" and calculates the percent difference of HCIDLA
+mergeLA$HvLpd=round(100*((mergeLA$HCIDLA-mergeLA$LUPAMS)/(mergeLA$LUPAMS+mergeLA$HCIDLA)/2), digits=3) #Uses HCIDLA as the "standard" and calculates the percent different of LUPAMS
+mergeLA$HRCvLRCpd=round(100*((mergeLA$HCIDLA_RC-mergeLA$LUPAMS_RC)/(mergeLA$LUPAMS+mergeLA$HCIDLA)/2), digits=3) #Same as above, except uses Rent-Controlled data only
+
+```
+<BR>
+
+We created a smaller data set in order to view and create columns more easily.
+```{r results="hide"}
+#Create a smaller data set so we can see columns of interest
+mergeLAshort=mergeLA[,c(1:8,17:20,22,45, 73:76)] #Chooses specific columns
+sapply(mergeLAshort, class) #Uses Sapply to list the class of each column
+mergeLAshort[is.na(mergeLAshort)]=0 #Changes NAs to 0. Note this does not affect the ACS, LUPAMS, HCIDLA columns because there are no NAs in those columns. The only NAs in the data set are in the HCIDLA Rent-Controlled column.
+
+
+#Clean data for smaller data set
+mergeLAshort$AvLpd[is.nan(mergeLAshort$AvLpd)==TRUE]=0 #Changes NANs (Not a Numbers) to 0
+mergeLAshort$AvHpd[is.nan(mergeLAshort$AvHpd)==TRUE]=0
+mergeLAshort$HvLpd[is.nan(mergeLAshort$HvLpd)==TRUE]=0
+mergeLAshort$HRCvLRCpd[is.nan(mergeLAshort$HRCvLRCpd)==TRUE]=0
+
+#Create column
+mergeLAshort$pct_bl=mergeLAshort$pct_black+mergeLAshort$pct_hisp #Creates column for percent Black and Latino
+
+```
+<BR>
+
+Import data from other sources/packages in R
+```{r results="hide"}
+#Get spatial data (tigris)
+tracts=tracts(state = 'CA', county=c(37), cb=TRUE) #create spatial data frame, state = "CA" tells R to focus on California, county=c(37) specifies that R should only take LA county tracts, cb=TRUE makes the file size smaller 
+
+
+#Get the tabular data (ACS)
+geo=geo.make(state=c("CA"), county=c(37), tract="*") #create geographic set to grab acs data
+income.names=c("Total",
+               "Less than $10,000", 
+               "$10,000 to $14,999", 
+               "$15,000 to $19,999",
+               "$20,000 to $24,999",
+               "$25,000 to $29,999",
+               "$30,000 to $34,999",
+               "$35,000 to $39,999",  
+               "$40,000 to $44,999",  
+               "$45,000 to $49,999",  
+               "$50,000 to $59,999", 
+               "$60,000 to $74,999",  
+               "$75,000 to $99,999",  
+               "$100,000 to $124,999",
+               "$125,000 to $149,999",
+               "$150,000 to $199,999",
+               "$200,000 or more") #Renames column names so they are easier to understand
+income=acs.fetch(endyear = 2014, span=5, geography = geo, table.number = "B19001", col.names = income.names)  #pulls in acs data, into a list (not a df)
+names(attributes(income)) #looks at categories of data
+attr(income, "acs.colnames") #checks income levels listed in acs.colnames
+
+#Convert to first data.frame for merging income data for population making $200K or more per year.
+income_df <- data.frame(paste0(str_pad(income@geography$state, 2, "left", pad="0"), 
+                               str_pad(income@geography$county, 3, "left", pad="0"), 
+                               str_pad(income@geography$tract, 6, "left", pad="0")), 
+                        income@estimate[,c("Total",
+                                           "$200,000 or more")], 
+                        stringsAsFactors = FALSE)
+income_df <- select(income_df, 1:3) #specifies 3 columns
+rownames(income_df)<-1:nrow(income_df)
+names(income_df)<-c("GEOID", "total", "over_200") #renames columns
+income_df$percent <- 100*(income_df$over_200/income_df$total) #calculates percent difference for the population that makes over $200K
+
+
+
+#Merge spatial and tabular data (ACS) with tigris
+income_merged<- geo_join(tracts, income_df, "GEOID", "GEOID")  #combines spatial and income data
+income_merged <- income_merged[income_merged$ALAND>0,] # excludes tracts with no land
+
+#Merges shortened Cal HFA data set with income data 
+mergeLAshort$GEOID=paste0("0",mergeLAshort$tract) #Edits data in "tract" column so that there is a 0 before the number and renames it all to a new column called "GEOID" (this will allow for the merge).
+income_df2=merge(income_df, mergeLAshort, by.x="GEOID", by.y="GEOID")  #merges the data sets by GEOID
+
+
+#Merge more data in order to make maps
+income_merged2 <- geo_join(tracts, income_df2, "GEOID", "GEOID") #Uses geo_join to merge data set (shorterned Cal HFA & income) with spatial data by GEOID
+income_merged2 <- income_merged2[income_merged2$ALAND>0,] #excludes tracts with no land
+
+
+#Convert to first data.frame for merging income data for population making $25K or more per year. (Areas below $25K would denote poverty)
+income_df3 <- data.frame(paste0(str_pad(income@geography$state, 2, "left", pad="0"), 
+                               str_pad(income@geography$county, 3, "left", pad="0"), 
+                               str_pad(income@geography$tract, 6, "left", pad="0")), 
+                        income@estimate[,c(1,
+                                           6:17)], 
+                        stringsAsFactors = FALSE)
+income_df3 <- select(income_df3, 1:14) #Chooses columns 1 through 14 from income_df3
+rownames(income_df3)<-1:nrow(income_df3) #selects all rows
+income_df3$over25=round((100*(income_df3$X.25.000.to..29.999+income_df3$X.30.000.to..34.999+
+                      income_df3$X.35.000.to..39.999+income_df3$X.40.000.to..44.999+
+                      income_df3$X.45.000.to..49.999+income_df3$X.50.000.to..59.999+
+                      income_df3$X.60.000.to..74.999+income_df3$X.75.000.to..99.999+
+                      income_df3$X.100.000.to..124.999+income_df3$X.125.000.to..149.999+
+                      income_df3$X.150.000.to..199.999+income_df3$X.200.000.or.more)/
+                     income_df3$Total), digits=3
+                    )
+income_df3=income_df3[,c(1,2,15)] #specifies 3 columns
+names(income_df3)<-c("GEOID", "total", "over_25_percent") #renames those 3 columns
+
+#geo_join for income_df3
+income_merged3 <- geo_join(tracts, income_df3, "GEOID", "GEOID") #Uses geo_join to merge new income data set with spatial data by GEOID
+income_merged3 <- income_merged3[income_merged3$ALAND>0,] #excludes tracts with no land
+
+
+#Get CA census map from choroplethrCaCensusTract (this is to show the "fun" map at the end)
+data("ca.tract.map") #look at data available from choroplethrCaCensusTract
+LAcountyFIP = subset(ca.tract.map, county.fips.numeric =="6037") #Isolates census tracts for LA county by choosing FIP 6037
+mergeLA$GEOID=paste0("0",mergeLA$tract) #Adds a column named "GEOID" to mergeLA. It consists of census tract numbers starting with 0, so as to match GEOID in LAcountyFIPS.
+str(mergeLA$GEOID) #This column is characters, but should be numeric
+str(LAcountyFIP$GEOID) #This column is also characters, but should be numeric
+mergeLA$GEOID = as.numeric(mergeLA$GEOID) #Sets column to numeric
+LAcountyFIP$GEOID = as.numeric(LAcountyFIP$GEOID) #Sets column to numeric
+
+LAcensusMERGE=merge(LAcountyFIP, mergeLA, by.x="GEOID", by.y="GEOID") #merges census map data with Cal HFA
+
+
+
+```
+<BR>
+
+Create data.frame for outlier data. Guidelines: 99=high, -99=low, 999=very high
+```{r results="hide"}
+
+##use numbers as codes to change these first.  Otherwise, the variable becomes character after the first subsitition which is difficult to work with.
+outliers=data.frame(c(mergeLAshort$tract)) #create a new data.frame for outliers using "tract"
+colnames(outliers)= c("tract") #rename column
+
+outliers$AvHpd=mergeLAshort$AvHpd #add column for percent difference between ACS and HCIDLA
+table(outliers$AvHpd) # Look at the data in the column. NOTE: the highest and lowest value are 50 and -50, and they each have 20 observations, so let's see what happens if we call these outliers
+outliers$AvHpd[outliers$AvHpd>=50]=99 #Sets values greater than 50 to 99 in order to classify better
+outliers$AvHpd[outliers$AvHpd<=-50]=-99  #Sets values less than -50 to -99 in order to classify better
+outliers$AvHpd[outliers$AvHpd!=99&outliers$AvHpd!=-99]="Normal" #If data does not equal to 99 or -99, then it's relabeled as "Normal"
+outliers$AvHpd[outliers$AvHpd==99]="High" #If data equals 99, then it is relabeled as High
+outliers$AvHpd[outliers$AvHpd==-99]="Low" #If data equals -99, then it is relabeled as Low
+
+outliers$AvLpd=mergeLAshort$AvLpd #add column for percent difference between ACS and LUPAMS
+table(outliers$AvLpd) #same as AvHpd, the highest and lowest value are 50 and -50, and they each have 20 observations.  do these outliers match up?
+outliers$AvLpd[outliers$AvLpd>=50]=99 #Sets values greater than 50 to 99 in order to classify better
+outliers$AvLpd[outliers$AvLpd<=-50]=-99  #Sets values less than -50 to -99 in order to classify better
+outliers$AvLpd[outliers$AvLpd!=99&outliers$AvLpd!=-99]="Normal" #If data does not equal to 99 or -99, then it's relabeled as "Normal"
+outliers$AvLpd[outliers$AvLpd==99]="High" #If data equals 99, then it is relabeled as High. NOTE: When ACS has a number of MFRU listed, LUPAMS & HCIDLA = 0
+outliers$AvLpd[outliers$AvLpd==-99]="Low" #If data equals -99, then it is relabeled as Low. NOTE: When ACS has 0 MFRU listed, then LUPAMS & HCIDLA have a matching number of MFRU
+```
+
+```{r}
+table(outliers$AvLpd==outliers$AvHpd) #Confirm that the LUPAMS and HCIDLA outliers all match up! 
+
+```
+
+```{r results="hide"}
+outliers$HvLpd=mergeLAshort$HvLpd #add column for percent difference between HCIDLA and LUPAMS
+table(outliers$HvLpd) ##judgement call based on looking at the table to use 4 and -4 as cutoffs, and add a "very high" category for over 15
+```
+
+```{r}
+outliers$HvLpd[outliers$HvLpd>=15]=999 #Sets values greater than 15 to 999 in order to classify better
+outliers$HvLpd[outliers$HvLpd>=4&outliers$HvLpd<15]=99
+outliers$HvLpd[outliers$HvLpd<=-4]=-99  #Sets values less than -4 to -99 in order to classify better
+outliers$HvLpd[outliers$HvLpd!=999&outliers$HvLpd!=99&outliers$HvLpd!=-99]="Normal" #If data does not equal to 99 or -99, then it's relabeled as "Normal"
+outliers$HvLpd[outliers$HvLpd==999]="Very high" #If data equals 999, then it is relabeled as Very High
+outliers$HvLpd[outliers$HvLpd==99]="High" #If data equals 99, then it is relabeled as High
+outliers$HvLpd[outliers$HvLpd==-99]="Low" #If data equals -99, then it is relabeled as Low
+table(outliers$HvLpd)
+
+outliers$HRCvLRCpd=mergeLAshort$HRCvLRCpd #add column for percent difference between HCIDLA Rent-Controlled and LUPAMS Rent-Controlled
+table(outliers$HRCvLRCpd) #there are three outlier values (all other values are 0).  one is extremely low (-1125.725), two are somewhat high (12.287 and 17.086)
+outliers$HRCvLRCpd[outliers$HRCvLRCpd>=10]=99 #Sets values greater than 10 to 99 in order to classify better
+outliers$HRCvLRCpd[outliers$HRCvLRCpd<=-10]=-99 #Sets values less than -10 to -99 in order to classify better
+outliers$HRCvLRCpd[outliers$HRCvLRCpd!=99&outliers$HRCvLRCpd!=-99]="Normal" #If data does not equal to 99 or -99, then it's relabeled as "Normal"
+outliers$HRCvLRCpd[outliers$HRCvLRCpd==99]="High"  #If data equals 99, then it is relabeled as High
+outliers$HRCvLRCpd[outliers$HRCvLRCpd==-99]="Low" #If data equals -99, then it is relabeled as Low
+
+outliers$GEOID=paste0("0",outliers$tract) #Places a 0 before each census tract number in "tract" and reassigns the data into a new column called GEOID (this is so the data will merge)
+
+
+```
+
+<BR>
+<BR>
+<BR>
+
+### A Closer Look at the Results
+This is where we talk about how percent difference in data sets did not allow us to make inferences about the areas experiencing gentrification. (E.g. Some census tracks were golf courses)
+```{r}
+### A Closer Examination of the Results
+outliers_tmp=outliers #Create tmp copy of outliers so we can isolate specific census tracts
+outliers_tmp$HRCvLRCpd=NULL #remove row we do not need 
+outliers_tmp$HvLpd=NULL #remove row we do not need
+outliers_tmp$acs_values=mergeLAshort$ACS_MFRENTALS #create new column with ACS data
+outliers_tmp$hcidla_values=mergeLAshort$HCIDLA #create new column with HCIDLA data
+outliers_tmp$lupams_values=mergeLAshort$LUPAMS #create new column with LUPAMS data
+outliers_tmp[which(outliers_tmp$AvHpd=="Low"),] #Identifies which census tracts had low percent difference
+outliers_tmp[which(outliers_tmp$AvHpd=="High"),] #Identifies which census tracts had high percent difference
+outliers_tmp$AvHpd=gsub("Low","ACS=0", outliers_tmp$AvHpd) #replaces "low" with more descriptive name "ACS=0"
+outliers_tmp$AvHpd=gsub("High", "LUPAMS/HCIDLA=0", outliers_tmp$AvHpd) #replaces "High" with more descriptive name "LUPAMS/HCIDLA=0"
+outliers_tmp$AvLpd=gsub("Low","ACS=0", outliers_tmp$AvLpd) #replaces "low" with more descriptive name "ACS=0"
+outliers_tmp$AvLpd=gsub("High", "LUPAMS/HCIDLA=0", outliers_tmp$AvLpd) #replaces "High" with more descriptive name "LUPAMS/HCIDLA=0"
+outliers_tmp$AvHpd=factor(outliers_tmp$AvHpd, levels = c("ACS=0", "Normal", "LUPAMS/HCIDLA=0")) #change order of levels
+outliers_tmp$AvLpd=factor(outliers_tmp$AvLpd, levels = c("ACS=0", "Normal", "LUPAMS/HCIDLA=0")) #change order of levels
+```
+
+```{r}
+
+#geo_join for outliers
+outliers_df=merge(income_df, outliers_tmp, by.x="GEOID", by.y="GEOID") #Merges outlier data with income data by GEOID
+
+outliers_merged <- geo_join(tracts, outliers_df, "GEOID", "GEOID") #Adds spatial data to the new outliers & income data set
+outliers_merged <- outliers_merged[outliers_merged$ALAND>0,] #excludes tracts with no land
+
+```
+
+<BR>
+<BR>
+<BR>
+
+### Statistical Analyses and Data Visualization
+We used percent difference and paired T-tests to analyze the columns for multi-family rental housing (ACS, LUPAMS, and HCIDLA)
+<BR>
+
+
+#### Histograms for Percent Difference
+
+LUPAMS and HCIDLA are quite similar, thus they are both noticeably different than ACS.
+```{r echo=FALSE}
+#Histograms
+ggplot(mergeLAshort, aes(AvHpd)) +
+  geom_histogram(color="white", fill="darkgreen", bins=20) +    
+  scale_x_continuous(name="% difference: ACS and HCIDLA Multi-Family Units") #Plots percent difference between ACS and HCIDLA. NOTE: outliers
+
+ggplot(mergeLAshort, aes(AvLpd)) +
+  geom_histogram(color="white", fill="darkgreen", bins=20) +    
+  scale_x_continuous(name="% difference: ACS and LUPAMS Multi-Family Units") #Plots percent difference between ACS and LUPAMS. NOTE: outliers
+
+ggplot(mergeLAshort, aes(HvLpd)) +
+  geom_histogram(color="white", fill="darkgreen", bins=30) +    
+  scale_x_continuous(name="% difference: HCIDLA and LUPAMS Multi-Family Units") #Plots percent difference between HCIDLA and LUPAMS. NOTE: Data sets are pretty similar
+
+ggplot(mergeLAshort, aes(HRCvLRCpd)) +
+  geom_histogram(color="white", fill="darkgreen", bins=30) +    
+  scale_x_continuous(name="% difference: HCIDLA and LUPAMS Rent-Controlled units") #Plots percent difference between HCIDLA (Rent-controlled) and LUPAMS (Rent-controlled). NOTE: Data is nearly the same
+```
+
+
+<BR>
+<BR>
+
+
+#### T-tests and scatterplots
+<BR>
+
+LUPAMS versus HCIDLA
+```{r}
+#Paired T-tests
+t.test(mergeLA$LUPAMS,mergeLA$HCIDLA,paired=TRUE)  #Paired T-test for LUPAMS and HCIDLA. NOTE: p value is 71%, so we cannot reject the null hypothesis.
+```
+
+```{r echo=FALSE}
+plot(mergeLA$HCIDLA~mergeLA$LUPAMS,
+     xlab="LUPAMS Rental units", ylab = "HCIDLA", main= "LUPAMS and HCIDLA",
+     xlim=c(0,4000), ylim=c(0,4000)) #Creates scatterplot showing LUPAMS and HCIDLA
+
+```
+<BR>
+
+ACS and HCIDLA
+```{r}
+t.test(mergeLA$ACS_MFRENTALS,mergeLA$HCIDLA,paired=TRUE) #Paired T-test for ACS and HCIDLA. NOTE: We can reject the null hypothesis.
+
+```
+
+```{r echo=FALSE}
+plot(mergeLA$ACS_MFRENTALS,mergeLA$HCIDLA, xlab = "ACS Rentals units", 
+     ylab="HCIDLA Rental units", main= "ACS and HCIDLA")  #Creates scatterplot showing ACS and HCIDLA
+```
+<BR>
+
+ACS and LUPAMS
+```{r}
+t.test(mergeLA$ACS_MFRENTALS,mergeLA$LUPAMS,paired=TRUE) #Paired T-test for ACS and LUPAMS. NOTE: We can reject the null hypothesis.
+
+
+```
+
+```{r echo=FALSE}
+plot(mergeLA$ACS_MFRENTALS,mergeLA$LUPAMS, xlab = "ACS Rentals units", 
+     ylab="LUPAMS Rental units", main= "ACS and LUPAMS") #Creates scatterplot showing ACS and LUPAMS
+```
+
+<BR>
+<BR>
+<BR>
+
+### Maps
+We created maps to show the locations of interest identified in the percent difference and t-tests.
+
+<BR>
+<BR>
+
+#### Percent Difference Maps
+We created a smaller data set to use for mapping.
+<BR>
+
+Percent of Households above $200K
+```{r results="hide"}
+popup <- paste0("GEOID: ", income_merged$GEOID, "<br>", "Percent of Households above $200k: ", round(income_merged$percent,2)) 
+pal <- colorNumeric(
+  palette = "YlGnBu",
+  domain = income_merged$percent) #Sets color palette for map data
+table(income_merged$percent)
+```
+
+```{r}
+map<-leaflet(width = "100%", height = "800px") %>% #Uses leaflet to create map for population making greater than $200K
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged, #Adds data from income_merged
+              fillColor = ~pal(percent), #Tells leaflet to use percent column when adding the color palette
+              color = "#b2aeae", # you need to use hex colors
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged$percent, #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent of Households<br>above $200k", #adds title
+            labFormat = labelFormat(suffix = "%"))  #Labels data 
+map #displays the map
+
+```
+<BR>
+
+Percent earning more than 25K per year
+```{r}
+pal <- colorNumeric(
+  palette = "Blues", 
+  domain = income_merged3$over_25_percent) #Sets color palette for map data
+
+map2<-leaflet(width = "100%", height = "800px") %>% #Uses leaflet to create map for population making greater than $25K
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged3, #adds data from income_merged3
+              fillColor = ~pal(over_25_percent),#Tells leaflet to use over_25_percent column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged3$over_25_percent,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent earning more than 25K per year", #adds legend title
+            labFormat = labelFormat(suffix = "%"))  #adds data label
+map2 #Income map using a different cutoff (25k instead of 250k)
+
+```
+<BR>
+
+Percent difference between ACS and LUPAMS
+```{r}
+
+pal <- colorNumeric(
+  palette = "BrBG",
+  domain = income_merged2$AvLpd)
+
+map3<-leaflet(width = "100%", height = "800px") %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged2,  #adds data from income_merged2
+              fillColor = ~pal(AvLpd), #Tells leaflet to use AvLpd column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged2$AvLpd,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent difference between ACS and LUPAMS", #adds legend title
+            labFormat = labelFormat(suffix = "%")) #Adds data label
+map3 #Percent difference between ACS and LUPAMS
+
+```
+
+<BR>
+Percent difference between ACS and HCIDLA
+```{r}
+pal <- colorNumeric(
+  palette = "BrBG",
+  domain = income_merged2$AvHpd)
+
+map4<-leaflet(width = "100%", height = "800px") %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged2,  #adds data from income_merged2
+              fillColor = ~pal(AvHpd), #Tells leaflet to use AvHpd column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged2$AvHpd,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent difference between ACS and HCIDLA", #adds legend title
+            labFormat = labelFormat(suffix = "%"))  #adds data label
+map4 #Percent difference between ACS and HCIDLA
+```
+<BR>
+
+Percent Asian Population
+```{r }
+pal <- colorNumeric(
+  palette = "Blues",
+  domain = income_merged2$pct_asian)
+
+map5<-leaflet(width = "100%", height = "800px") %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged2,  #adds data from income_merged2
+              fillColor = ~pal(pct_asian), #Tells leaflet to use pct_asian column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged2$pct_asian,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent Asian Population", #adds legend title
+            labFormat = labelFormat(suffix = "%")) #adds data label
+map5 #Percent asian population
+
+```
+<BR>
+
+Percent Black and Latinx population
+```{r }
+pal <- colorNumeric(
+  palette = "Greens",
+  domain = income_merged2$pct_bl)
+
+map6<-leaflet(width = "100%", height = "800px") %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = income_merged2,  #adds data from income_merged2
+              fillColor = ~pal(pct_bl), #Tells leaflet to use pct_bl column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = income_merged2$pct_bl,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Percent Black & Latinx Population", #Adds legend title
+            labFormat = labelFormat(suffix = "%")) #Adds data label
+
+
+map6 #Percent Black & Latinx population
+
+```
+<BR>
+
+Showing outliers (ACS and LUPAMS)
+```{r}
+
+pal <- colorFactor(
+  palette = "PiYG",
+  domain = outliers_merged$AvLpd)
+
+map7<-leaflet(width = "100%", height = "800px") %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = outliers_merged,  #adds data from outliers_merged
+              fillColor = ~pal(AvLpd), #Tells leaflet to use AvLpd column when adding the color palette
+              color = "#b2aeae", 
+              fillOpacity = 0.7, 
+              weight = 1, 
+              smoothFactor = 0.2) %>% 
+  addLegend(pal = pal, #Adds a map legend
+            values = outliers_merged$AvLpd,  #Adds data source to map legend
+            position = "bottomright", #positions legend in bottomright
+            title = "Unmatched zeroes", #Adds legend title
+            labFormat = labelFormat(suffix=""))  #removes data label
+map7 #outliers AvLpd and AvHpd are identical, so we only need to make one map
+
+```
+
+
+
+<BR>
+<BR>
+<BR>
+
+
+### Conclusions
+This is where our conclusions go!
+
+
+<BR>
+<BR>
+<BR>
+<BR>
+
+### Jen's Strange/Fail Map -- for fun!
+This map also depicts "Percent Difference between ACS and HCIDLA." This code did not work that well because there were multiple entries for each census tract number in ca.tract.map; however, we thankfully had other maps to use.
+
+
+```{r}
+ditch_axes = theme (
+  axis.text = element_blank(),
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = element_blank(),
+  panel.grid = element_blank(),
+  axis.title = element_blank()) #code to remove latitude and longitude labels on map
+
+
+Map1 = ggplot(data=LAcountyFIP, mapping = aes(x=long, y=lat, group = group))+ 
+  coord_fixed(1.3) +
+  geom_polygon(color = "black", fill = "NA")+ # creates outline of census tracts
+  ditch_axes
+
+```
+
+```{r}
+
+AvHpdMAP = Map1 +
+  geom_polygon(data=LAcensusMERGE, aes(fill = AvHpd, group = group)) + #adds the data from California Housing Finance Agency and ROI -- looks at ACS vs HCIDLA
+  ggtitle ("Percent Difference Between ACS and HCIDLA") + #title of map
+  theme(plot.title = element_text(size=16, face="bold"), #sets title font to bold and size 16
+        legend.position = "right") + #places map legend to the right  
+  guides(fill=guide_legend(title = NULL)) + #deletes legend title
+  coord_fixed(xlim = c(-118.7, -118.15),  ylim = c(33.7, 34.35), ratio = 1.3)+ #Zooms into area of LA with data
+  ditch_axes #Removes latitude and longitude labels
+
+AvHpdMAP
+```
